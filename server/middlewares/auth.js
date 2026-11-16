@@ -1,31 +1,70 @@
 const jwt = require('jsonwebtoken');
+const { isObjectIdOrHexString } = require('mongoose')
+const User = require('../models/users.model')
+const { RoleEnum } = require('../utils/enum')
+const validRoles = Object.values(RoleEnum)
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
     const authorizationHeader = req.headers['authorization']
     if (!authorizationHeader) return res.status(401).json({message: '401 Unauthorized'})
 
     const token = authorizationHeader.split(' ')[1]
     if (!token) return res.status(401).json({message: '401 Unauthorized'})
 
-    jwt.verify(token, process.env.JWT_ACCESS_TOKEN_SECRET, async (err, data) => {
-        if (err) return res.status(403).json({message: '403 Forbidden'})
-        const { userId, role } = data
-        req.user = {userId: userId, role: role || 0}
+    let userId
+    try {
+        ({ userId } = jwt.verify(token, process.env.JWT_ACCESS_TOKEN_SECRET))
+    } catch {
+        return res.status(403).json({message: '403 Forbidden'})
+    }
+
+    if (!isObjectIdOrHexString(userId)) return res.status(403).json({message: '403 Forbidden'})
+    try {
+        const user = await User.findById(userId).select('role status').lean()
+        if (!user || user.status !== 1 || !validRoles.includes(user.role)) {
+            return res.status(403).json({message: '403 Forbidden'})
+        }
+        req.user = { userId: String(user._id), role: user.role }
         next()
-    })
+    } catch (error) {
+        next(error)
+    }
 }
 
-const checkRole = (permissions) => {
-    return (req, res, next) => {
-        const id = req.params.userId || req.query.userId
-        const { role, userId } = req.user
-        const { query } = req.query
-        if (query) {
-            const { role: roleQuery } = query
-            if (roleQuery && role <= +roleQuery) return res.status(403).json({message: '403 Forbidden'})
-        }
+// Allows public endpoints to accept either an authenticated user or no token.
+// A supplied but invalid token is still rejected and is never downgraded to anonymous.
+const optionalVerifyToken = async (req, res, next) => {
+    const authorizationHeader = req.headers['authorization']
+    if (!authorizationHeader) return next()
 
-        if (!permissions.includes(role) && id !== userId) return res.status(403).json({message: '403 Forbidden'})
+    const [scheme, token] = authorizationHeader.split(' ')
+    if (scheme !== 'Bearer' || !token) return res.status(401).json({message: '401 Unauthorized'})
+
+    let userId
+    try {
+        ({ userId } = jwt.verify(token, process.env.JWT_ACCESS_TOKEN_SECRET))
+    } catch {
+        return res.status(403).json({message: '403 Forbidden'})
+    }
+
+    if (!isObjectIdOrHexString(userId)) return res.status(403).json({message: '403 Forbidden'})
+    try {
+        const user = await User.findById(userId).select('role status').lean()
+        if (!user || user.status !== 1 || !validRoles.includes(user.role)) {
+            return res.status(403).json({message: '403 Forbidden'})
+        }
+        req.user = { userId: String(user._id), role: user.role }
+        next()
+    } catch (error) {
+        next(error)
+    }
+}
+
+const checkRole = (permissions, { allowSelf = false } = {}) => {
+    return (req, res, next) => {
+        const { role, userId } = req.user
+        const isSelf = allowSelf && req.params.userId === userId
+        if (!permissions.includes(role) && !isSelf) return res.status(403).json({message: '403 Forbidden'})
         next()
     }
 }
@@ -34,7 +73,7 @@ const verifyUser = (req, res, next) => {
     try {
         const id = req.params.userId || req.query.userId
         const { role, userId } = req.user
-        if (role > 0 || id === userId) {
+        if ([RoleEnum.Staff, RoleEnum.Admin].includes(role) || id === userId) {
             next()
         } else {
             return res.status(403).json({message: '403 Forbidden'})
@@ -48,7 +87,7 @@ const isStaff = (req, res, next) => {
     try {
         const id = req.params.userId || req.query.userId
         const { role, userId } = req.user
-        if (role >= 2 || id === userId) {
+        if ([RoleEnum.Staff, RoleEnum.Admin].includes(role) || id === userId) {
             next()
         } else {
             return res.status(403).json({message: '403 Forbidden'})
@@ -59,8 +98,8 @@ const isStaff = (req, res, next) => {
 }
 
 const isAdmin = (req, res, next) => {
-    const { role } = req.user
-    if (role === 3) {
+    const role = req.user?.role
+    if (role === RoleEnum.Admin) {
         next()
     } else {
         return res.status(403).json({message: '403 Forbidden'})
@@ -68,4 +107,4 @@ const isAdmin = (req, res, next) => {
 }
 
 
-module.exports = { verifyToken, checkRole, verifyUser, isStaff, isAdmin }
+module.exports = { verifyToken, optionalVerifyToken, checkRole, verifyUser, isStaff, isAdmin }

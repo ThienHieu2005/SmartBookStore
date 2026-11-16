@@ -4,6 +4,9 @@ import { Link } from "react-router-dom";
 
 function BookItem({data, boxShadow}) {
   const { price , discount } = data
+  const authorNames = Array.isArray(data.author)
+    ? data.author.map(author => author.name).join(', ')
+    : data.author?.name
   let newPrice = price
   if (discount > 0) {
     newPrice = price - price * discount / 100
@@ -20,7 +23,7 @@ function BookItem({data, boxShadow}) {
       <div className={styles.card}>
         <Link to={`/chi-tiet-san-pham/${data.slug}`} className={styles.bookInfo}>
           <img variant="top" src={data.imageUrl} alt="" />
-          <p className={styles.name}>{data.name} - {data.author?.name || data.author[0]?.name}</p>
+          <p className={styles.name}>{data.name}{authorNames ? ` - ${authorNames}` : ''}</p>
         </Link>
         <div className={styles.cardFooter}>
           <span className={styles.price}>{format.formatPrice(newPrice)}</span>

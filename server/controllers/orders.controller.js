@@ -4,8 +4,10 @@ const axios = require('axios')
 const orderService = require('../services/orders.service')
 const voucherService = require('../services/vouchers.service')
 
-const { paymentStatusEnum, methodEnum, orderStatusEnum } = require('../utils/enum')
+const { paymentStatusEnum, methodEnum, orderStatusEnum, RoleEnum } = require('../utils/enum')
 const { orderSuccess } = require('../utils/sendMail')
+
+const canManageOrders = (role) => [RoleEnum.Staff, RoleEnum.Admin].includes(role)
 
 const orderController = {
     getAll: async(req, res) => {
@@ -13,7 +15,7 @@ const orderController = {
             const page = req.query.page ? parseInt(req.query.page) : 1
             const limit = req.query.limit ? parseInt(req.query.limit) : 2
             const sort = req.query.sort ? req.query.sort : { createdAt: -1 }
-            const userId = req.query.userId
+            const userId = canManageOrders(req.user.role) ? req.query.userId : req.user.userId
 
             let query = {}
             if (userId) query.user = { $in : userId}
@@ -42,7 +44,8 @@ const orderController = {
     getById: async(req, res) => {
         try {
             const { id } = req.params
-            const data = await orderService.getById(id)
+            const ownerId = canManageOrders(req.user.role) ? undefined : req.user.userId
+            const data = await orderService.getById(id, ownerId)
             if (data) {
                 res.status(200).json({
                     message: 'success',
@@ -165,10 +168,16 @@ const orderController = {
     },
     create: async(req, res) => {
         try {
-            const { userId, products, delivery, voucherId, cost, method, paymentId } = req.body
-            if (products.length <= 0) return res.status(400).json({error: 1, message: "Giỏ hàng rỗng. Không thể thực hiện!!"}) 
+            const { products, delivery, voucherId, cost, method, paymentId } = req.body
+            const { userId } = req.user
+            if (req.body.userId && req.body.userId !== userId) {
+                return res.status(403).json({ error: 1, message: '403 Forbidden' })
+            }
+            if (!Array.isArray(products) || products.length === 0) {
+                return res.status(400).json({ error: 1, message: 'Giỏ hàng rỗng. Không thể thực hiện!!' })
+            }
 
-            const voucher = await voucherService.getById(voucherId)
+            const voucher = voucherId ? await voucherService.getById(voucherId) : null
             if (voucher) {
                 const { minimum, start, end } = voucher
                 const now = new Date()
@@ -187,11 +196,12 @@ const orderController = {
             }
            
             const data = await orderService.create({
-                userId, products, delivery, voucherId, cost, method, paymentId
+                userId, products, delivery, voucherId: voucherId || undefined, cost, method, paymentId
             })
 
             if (data) {
                 await orderSuccess({ clientURL: req.get('origin'), delivery, products, method, cost })
+                    .catch(() => console.warn('Đã lưu đơn hàng nhưng gửi email xác nhận thất bại.'))
             }
 
             return res.status(201).json({
@@ -211,7 +221,8 @@ const orderController = {
         try {
             const { id } = req.params
             const { paymentId } = req.body
-            const data = await orderService.updatePaymentId(id, { paymentId })
+            const data = await orderService.updatePaymentId(id, req.user.userId, { paymentId })
+            if (!data) return res.status(404).json({ error: 1, message: 'Không tìm thấy đơn hàng!' })
             res.status(200).json({
                 message: 'success',
                 error: 0,
@@ -230,6 +241,7 @@ const orderController = {
             const { orderStatusCode } = req.body
             const { user: { userId } } = req
             const order = await orderService.getById(id)
+            if (!order) return res.status(404).json({ error: 1, message: 'Không tìm thấy đơn hàng!' })
 
             const { method, paymentStatus, orderStatus: { code: oldCode } } = order
 

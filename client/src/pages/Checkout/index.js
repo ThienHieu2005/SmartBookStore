@@ -21,7 +21,7 @@ import userApi from "../../api/userApi";
 
 import methodData from "./methodData"
 
-import { destroy } from "../../redux/actions/cart"
+import { setCart } from "../../redux/actions/cart"
 import styles from "./Payment.module.css";
 
 
@@ -52,10 +52,10 @@ export default function Checkout() {
    
   useEffect(() => {
     const token = localStorage.getItem('accessToken')
-    if (!currentUser.userId || !token) {
+    if (!token) {
       navigate({ pathname: '/' })
     }
-  }, [navigate, currentUser, cartData])
+  }, [navigate, currentUser.userId])
 
   useEffect(() => {
     // Call API lấy danh sách địa chỉ
@@ -107,6 +107,9 @@ export default function Checkout() {
     onSubmit: async () => {
       const { email, fullName, phoneNumber, address, method } = formik.values;
       const { list } = cartData
+      if (cartData.ownerId !== currentUser.userId || list.length === 0) {
+        return toast.info('Giỏ hàng chưa có sản phẩm.')
+      }
       const products = list.map(item => {
         return {
           product: item?.product._id,
@@ -121,8 +124,8 @@ export default function Checkout() {
       if (address?._id === "-1" && shippingAddress?.address === "") {
         return alert("Vui lòng điền đầy đủ thông tin!")
       }
-      if (shippingAddress?.fullAddress === "") {
-        return
+      if (!shippingAddress?.fullAddress) {
+        return toast.info('Vui lòng chọn địa chỉ giao hàng!')
       }
       const paymentId = uuidv4()
       const body = {
@@ -156,7 +159,7 @@ export default function Checkout() {
             await userApi.updateCart(currentUser?.userId, {cart: []})
             toast.success("Đặt mua hàng thành công!", {autoClose: 2000})
             setLoading(false)
-            dispatch(destroy())
+            dispatch(setCart([], currentUser.userId))
             navigate({ pathname: '/don-hang' })
           } catch (error) {
             setLoading(false)
@@ -167,7 +170,7 @@ export default function Checkout() {
           {
             try {
               setLoading(true)
-              const { payUrl } = await orderApi.getPayUrlMoMo({ amount: cartData?.total , paymentId })
+              const { payUrl } = await orderApi.getPayUrlMoMo({ amount: body.cost.total, paymentId })
               await orderApi.create(body)
               await userApi.updateCart(currentUser?.userId, {cart: []})
               setLoading(false)
@@ -271,7 +274,7 @@ export default function Checkout() {
         }, {
           headers: {
             'token': process.env.REACT_APP_GHN_TOKEN,
-            'shopid': 3710396
+            'shopid': process.env.REACT_APP_GHN_SHOP_ID
           },
         })
         const { total: totalFee } = data?.data
@@ -298,7 +301,7 @@ export default function Checkout() {
         }, {
           headers: {
             'token': process.env.REACT_APP_GHN_TOKEN,
-            'shopid': 3710396
+            'shopid': process.env.REACT_APP_GHN_SHOP_ID
           },
         })
         

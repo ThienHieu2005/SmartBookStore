@@ -1,4 +1,5 @@
 const initialState =  {
+    ownerId: null,
     list: [],
     voucher: {
         _id: "",
@@ -161,36 +162,25 @@ const cartReducer = (state = initialState, action) => {
             }
         }
 
-        case "DESTROY": {
-            
-           return {
-                ...state,
-                list: [],
-                voucher: {},
-                subTotal: 0,
-                shippingFee: 0,
-                discount: 0,
-                total: 0,
-           }
-       }
+        case "DESTROY":
+            return initialState
 
-       case "SET_CART": {
+        case "SET_CART": {
+            const { list, ownerId } = action.payload
+            const subTotal = list.reduce((sum, item) => sum + item.totalPriceItem, 0)
             return {
-                ...state,
-                list: action.payload,
-                voucher: "",
-                subTotal: 0,
-                shippingFee: 0,
-                discount: 0,
-                total: 0,
+                ...initialState,
+                ownerId,
+                list,
+                subTotal,
+                total: subTotal
+            }
         }
-       }
 
         default: {
             return state;
         }
     }
 };
-  
+
 export default cartReducer;
-  

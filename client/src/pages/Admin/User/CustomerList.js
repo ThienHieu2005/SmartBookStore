@@ -11,6 +11,7 @@ import OrderDetail from "../../../components/OrderDetail";
 import steps from "../../../components/OrderProgress/enum";
 import userApi from "../../../api/userApi"
 import orderApi from "../../../api/orderApi"
+import { roleEnum } from "../../../constants/roles";
 
 export default function CustomerList() {
   const [customerData, setCustomerData] = useState({})
@@ -38,7 +39,7 @@ export default function CustomerList() {
             { email: { "$regex": searchString, "$options": "i" } },
             { phoneNumber: { "$regex": searchString, "$options": "i" } },
           ],
-          role: 0
+          role: roleEnum.Customer
         }
         const { data, pagination } = await userApi.getAll({ 
           page, 

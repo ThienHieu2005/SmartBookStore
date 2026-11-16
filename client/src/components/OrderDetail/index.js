@@ -3,6 +3,7 @@ import OrderProgress from "../OrderProgress"
 import moment from "moment";
 import format from "../../helper/format";
 import { useSelector } from "react-redux";
+import { roleEnum } from "../../constants/roles";
 
 export default function OrderDetail({ data }) {
 
@@ -83,7 +84,7 @@ export default function OrderDetail({ data }) {
                   <p style={{ width: 200, fontWeight: "bold" }}>{moment(item?.time).format("DD-MM-yyyy HH:mm:ss")}</p>
                   <div>
                     <p>{item?.status}</p>
-                    {role >= 2 && <p>Thực hiện: {item?.user?.fullName}</p>}
+                    {[roleEnum.Staff, roleEnum.Admin].includes(role) && <p>Thực hiện: {item?.user?.fullName}</p>}
                   </div>
                 </div>
               )

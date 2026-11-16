@@ -23,8 +23,8 @@ const userService = {
     getByEmail: async(email) => {
         return await User.findOne({email})
     },
-    getByServiceId: async(serviceId) => {
-        return await User.findOne({serviceId: serviceId})
+    getByServiceId: async(serviceId, service) => {
+        return await User.findOne({ serviceId, service })
     },
     getAddressByUserId: async(userId) => {
         return await User.findById(userId).select({"address": 1})
@@ -39,8 +39,8 @@ const userService = {
             }
         }, { new: true })
     },
-    register: async({email, fullName, password}) => {
-        const newUser = new User({email, password, fullName})
+    register: async({email, fullName, password, status}) => {
+        const newUser = new User({email, password, fullName, ...(status === undefined ? {} : {status})})
         return await newUser.save()
     },
     createStaff: async({email, fullName, password, phoneNumber, role, status}) => {
@@ -62,7 +62,7 @@ const userService = {
             return { data: result }
         } catch (err) {
             return {
-                message: `Có lỗi xảy ra! ${error.message}`,
+                message: `Có lỗi xảy ra! ${err.message}`,
                 error: 1,
             }
         }

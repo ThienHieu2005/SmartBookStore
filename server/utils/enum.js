@@ -1,5 +1,5 @@
 const RoleEnum = {
-    Customer: 1,
+    Customer: 0,
     Staff: 2,
     Admin: 3
 }

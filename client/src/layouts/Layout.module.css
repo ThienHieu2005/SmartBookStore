@@ -8,8 +8,22 @@
 }
 
 .contentWrapperAdmin {
-    margin-left: 240px;
-    background-color: #f4f6f9;
+    min-height: 100vh;
+    margin-left: 260px;
+    background-color: #f5f8f5;
     overflow: hidden;
-    padding: 20px;
+    padding: 28px;
+}
+
+@media (max-width: 900px) {
+    .contentWrapperAdmin {
+        margin-left: 0;
+        padding: 20px;
+    }
+}
+
+@media (max-width: 576px) {
+    .contentWrapperAdmin {
+        padding: 14px 10px 24px;
+    }
 }

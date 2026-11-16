@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react'
+import React, {useEffect, useRef, useState} from 'react'
 import { Col, Container, Row } from 'react-bootstrap'
 import { AiOutlineMinus, AiOutlinePlus, AiOutlineShoppingCart } from 'react-icons/ai'
 import { toast } from 'react-toastify';
@@ -8,7 +8,7 @@ import Loading from "../../components/Loading"
 
 import { useNavigate, useParams } from 'react-router-dom';
 import bookApi from "../../api/bookApi";
-import userApi from "../../api/userApi";
+import bookViewApi from "../../api/bookViewApi";
 import { addToCart } from "../../redux/actions/cart"
 import { useDispatch, useSelector } from "react-redux"
 import format from "../../helper/format";
@@ -21,30 +21,16 @@ export default function ProductDetail() {
   const params = useParams()
   const { slug } = params
 
-  const cartData = useSelector((state) => state.cart);
+  const cartOwnerId = useSelector((state) => state.cart.ownerId);
   const currentUser = useSelector((state) => state.auth);
 
   const [bookData, setBookData] = useState({})
   const [loading, setLoading] = useState(false)
 
   const [quantity, setQuantity] = useState(1);
-
-  useEffect(() => {
-    const addToCart = async() => {
-      try {
-        const { list } = cartData
-        const newList = list.map(item => {
-          return { product: item.product._id, quantity: item.quantity }
-        })
-        await userApi.updateCart(currentUser.userId, {cart: newList})
-      } catch (error) {
-        console.log(error)
-      }
-    }
-    if (currentUser && currentUser.userId) {
-      addToCart()
-    }
-  }, [cartData, currentUser])
+  const [anonymousConsent, setAnonymousConsent] = useState(() => bookViewApi.hasConsent());
+  const [showViewNotice, setShowViewNotice] = useState(false);
+  const lastRecordedView = useRef("");
 
   useEffect(() => {
     const fetchBook = async () => {
@@ -60,6 +46,51 @@ export default function ProductDetail() {
     };
     fetchBook();
   }, [slug]);
+
+  useEffect(() => {
+    if (!bookData?._id) return;
+    const hasSessionToken = (() => {
+      try { return Boolean(localStorage.getItem('accessToken')); } catch { return false; }
+    })();
+    const viewerKey = currentUser.userId || (hasSessionToken ? 'authenticated-session' : 'anonymous-session');
+    const viewKey = `${bookData._id}:${viewerKey}`;
+    if (lastRecordedView.current === viewKey) return;
+    lastRecordedView.current = viewKey;
+
+    if (currentUser.userId || hasSessionToken) {
+      setShowViewNotice(false);
+      bookViewApi.record(bookData._id).catch(() => {});
+      return;
+    }
+    if (anonymousConsent) {
+      setShowViewNotice(false);
+      bookViewApi.record(bookData._id, true).catch(() => {});
+    } else if (bookViewApi.getConsentChoice() !== 'declined') {
+      setShowViewNotice(true);
+    }
+  }, [bookData?._id, currentUser.userId, anonymousConsent]);
+
+  const chooseAnonymousConsent = (accepted) => {
+    bookViewApi.setConsent(accepted);
+    setAnonymousConsent(accepted);
+    setShowViewNotice(false);
+    if (accepted && bookData?._id) {
+      // Reset the key so opting in on the already-open detail page records this view.
+      lastRecordedView.current = '';
+    }
+  };
+
+  const deleteAnonymousHistory = async () => {
+    try {
+      await bookViewApi.deleteAnonymous();
+      bookViewApi.setConsent(false);
+      setAnonymousConsent(false);
+      setShowViewNotice(false);
+      lastRecordedView.current = '';
+    } catch {
+      // Keep the opt-in active if the delete request did not complete.
+    }
+  };
 
 
   const decQuantity = () => {
@@ -85,8 +116,16 @@ export default function ProductDetail() {
     }
   }
 
-  const handleAddToCart = () => {
-    if (currentUser && currentUser.userId) {
+  const addCurrentBook = () => {
+    if (!currentUser.userId) {
+      toast.info('Vui lòng đăng nhập để thực hiện!', {autoClose: 2000})
+      return false
+    }
+    if (cartOwnerId !== currentUser.userId) {
+      toast.info('Giỏ hàng đang tải, vui lòng thử lại!', {autoClose: 2000})
+      return false
+    }
+    if (bookData._id && quantity > 0) {
       const { _id: productId, name, imageUrl, slug, price, discount } = bookData
       let newPrice = price
       if (discount > 0) {
@@ -96,27 +135,17 @@ export default function ProductDetail() {
         price: newPrice, 
         totalPriceItem: newPrice * quantity})
       dispatch(action)
-      toast.success('Thêm sản phẩm vào giỏ hàng thành công!', {autoClose: 2000})
-    } else {
-      toast.info('Vui lòng đăng nhập để thực hiện!', {autoClose: 2000})
+      return true
     }
+    return false
+  }
+
+  const handleAddToCart = () => {
+    if (addCurrentBook()) toast.success('Thêm sản phẩm vào giỏ hàng thành công!', {autoClose: 2000})
   }
 
   const handleBuyNow = () => {
-    if (currentUser && currentUser.userId) {
-      const { _id: productId, name, imageUrl, slug, price, discount } = bookData
-      let newPrice = price
-      if (discount > 0) {
-        newPrice = price - price * discount / 100
-      }
-      const action = addToCart({quantity, productId, name, imageUrl, slug, 
-        price: newPrice, 
-        totalPriceItem: newPrice * quantity})
-      dispatch(action)
-      navigate({ pathname: "/gio-hang" });
-    } else {
-      toast.info('Vui lòng đăng nhập để thực hiện!', {autoClose: 2000})
-    }
+    if (addCurrentBook()) navigate({ pathname: "/gio-hang" })
   }
 
   return (
@@ -185,6 +214,18 @@ export default function ProductDetail() {
             </Col>
           <DetailedBookInfo data={bookData} /> 
         </Row> : <Loading />}
+        {showViewNotice && bookData?._id && (
+          <div className="alert alert-light border mt-3" role="note">
+            <p className="mb-2">Bạn có thể đồng ý lưu sách đã xem trong phiên này để hỗ trợ tính năng cá nhân hóa sau này. Mã phiên ngẫu nhiên được lưu trong sessionStorage và lịch sử tự hết hạn sau 180 ngày.</p>
+            <button type="button" className="btn btn-success btn-sm me-2" onClick={() => chooseAnonymousConsent(true)}>Đồng ý trong phiên này</button>
+            <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => chooseAnonymousConsent(false)}>Không đồng ý</button>
+          </div>
+        )}
+        {anonymousConsent && !currentUser.userId && !bookViewApi.hasAuthenticatedSession() && (
+          <button type="button" className="btn btn-link btn-sm mt-2" onClick={deleteAnonymousHistory}>
+            Xóa lịch sử phiên này và tắt ghi nhận
+          </button>
+        )}
       </Container>
     </div>
   )

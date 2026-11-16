@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { useDispatch } from "react-redux";
 import { updateQuantity, removeItem } from "../../../redux/actions/cart";
 
@@ -11,35 +11,12 @@ import { Button } from "react-bootstrap";
 export default function CartItem(props) {
   const dispatch = useDispatch();
 
-  const [quantity, setQuantity] = useState(props.quantity);
-  const [totalPriceItem, setTotalPriceItem] = useState(props.totalPriceItem);
-
-  function increaseQuantity() {
-    setQuantity((preValue) => preValue + 1);
-    setTotalPriceItem(props.price * (quantity + 1));
-  }
-
-  function decreaseQuantity() {
-    if (quantity > 1) {
-      setQuantity((preValue) => preValue - 1);
-      setTotalPriceItem(props.price * (quantity - 1));
-    }
-  }
-
-  function handleChange(event) {
-    const value =
-      parseInt(event.target.value) > 0 ? parseInt(event.target.value) : 1;
-    setQuantity(value);
-    setTotalPriceItem(props.price * value);
-  }
+  const { productId, quantity, totalPriceItem } = props;
+  const changeQuantity = (value) => dispatch(updateQuantity({ productId, quantity: Math.max(1, value || 1) }));
 
   const handleRemoveItem = (productId) => {
     dispatch(removeItem({productId}));
   }
-
-  useEffect(() => {
-    dispatch(updateQuantity({ productId: props.productId, quantity }));
-  }, [quantity, dispatch, props.productId]);
 
   return (
     <tr>
@@ -52,18 +29,18 @@ export default function CartItem(props) {
       <td className="price">{format.formatPrice(props.price)}</td>
       <td>
         <div className="d-flex align-items-center justify-content-center">
-          <button className={styles.btnChange} onClick={decreaseQuantity}>
+          <button className={styles.btnChange} onClick={() => changeQuantity(quantity - 1)}>
             -
           </button>
-          <input type="number" className={styles.inputQuantity} value={quantity} onChange={handleChange} />
-          <button className={styles.btnChange} onClick={increaseQuantity}>
+          <input type="number" min="1" className={styles.inputQuantity} value={quantity} onChange={(e) => changeQuantity(parseInt(e.target.value, 10))} />
+          <button className={styles.btnChange} onClick={() => changeQuantity(quantity + 1)}>
             +
           </button>
         </div>
       </td>
       <td className="price" style={{fontWeight: "bold"}}>{format.formatPrice(totalPriceItem)}</td>
       <td>
-        <Button variant="danger" onClick={() => handleRemoveItem(props.productId)}><FaTrashAlt /></Button>
+        <Button variant="danger" aria-label={`Bỏ ${props.name} khỏi giỏ`} onClick={() => handleRemoveItem(props.productId)}><FaTrashAlt /></Button>
       </td>
     </tr>
   );

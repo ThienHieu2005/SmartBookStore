@@ -35,7 +35,7 @@ axiosClient.interceptors.request.use(async (config) => {
         }
         
       } catch (error) {
-        if (error.response.status === 403 || error.response.status === 401) {
+        if ([401, 403].includes(error.response?.status)) {
           localStorage.removeItem('accessToken')
         }
       }
@@ -50,8 +50,10 @@ axiosClient.interceptors.request.use(async (config) => {
 axiosClient.interceptors.response.use(
   (res) => res.data, 
   (error) => {
-  toast.error(error.response.data.message, { autoClose: 2000 })
-  return Promise.reject(error)
+    if (!error.config?.skipErrorToast) {
+      toast.error(error.response?.data?.message || error.message, { autoClose: 2000 })
+    }
+    return Promise.reject(error)
 })
 
 export default axiosClient

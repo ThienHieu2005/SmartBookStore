@@ -19,10 +19,10 @@ export const removeItem = (data) => {
     }
 }
 
-export const setCart = (data) => {
+export const setCart = (list, ownerId) => {
     return {
         type: "SET_CART",
-        payload: data
+        payload: { list, ownerId }
     }
 }
 

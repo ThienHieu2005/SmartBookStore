@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const bcrypt = require('bcrypt');
 const userService = require('../services/user.service')
-const { transporter } = require('../config/nodemailer')
+const { transporter, ensureEmailConfigured } = require('../config/nodemailer')
 const { cloudinary } = require('../config/cloudinary')
 
 const { RoleEnum } = require('../utils/enum')
@@ -12,7 +12,7 @@ const usersController = {
             const page = req.query.page ? parseInt(req.query.page) : 1
             const limit = req.query.limit ? parseInt(req.query.limit) : 0
             const sort = req.query.sort ? req.query.sort : { createdAt: -1 }
-            const { query } = req.query
+            const query = { $and: [req.query.query || {}, { role: { $lt: req.user.role } }] }
 
             const [count, data] = await userService.getAll({query, page, limit, sort})
             const totalPage = Math.ceil(count / limit)
@@ -116,6 +116,7 @@ const usersController = {
 
             const checkEmail = await userService.getByEmail(email)
             if (checkEmail)  return res.status(400).json({ message: 'Email đã tồn tại!', error: 1 })
+            ensureEmailConfigured()
             
             const password = (Math.floor(Math.random() * 9999999) + 100000).toString()
             const hash = await bcrypt.hash(password, 10)

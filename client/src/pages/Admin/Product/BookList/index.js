@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom"
 import { toast } from 'react-toastify';
 import PaginationBookStore from "../../../../components/PaginationBookStore";
-import { FaEdit, FaTrashAlt, FaSearch } from "react-icons/fa"
+import { FaEdit, FaTrashAlt, FaSearch, FaPlus } from "react-icons/fa"
 
 
 import { Row, Col, Table, Spinner, Modal, Button } from "react-bootstrap";
@@ -91,7 +91,7 @@ function BookList() {
           <div className="admin-content-action">
             <div className="d-flex">
               <input className="form-control search" placeholder="Tìm kiếm" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
-              <Button type="button" style={{color: "white"}} variant="info"
+              <Button type="button" className="admin-search-btn" style={{color: "white"}} variant="info"
                 onClick={() => {
                   setSearchString(searchInput)
                   setPage(1)
@@ -100,6 +100,10 @@ function BookList() {
                   <FaSearch />
               </Button>
             </div>
+            <Link to="/admin/book/add" className="admin-add-book-btn">
+              <FaPlus />
+              <span>Thêm sách</span>
+            </Link>
           </div>
           <div className="admin-content-body">
             <Table hover>
@@ -111,13 +115,15 @@ function BookList() {
                   <th>Xuất bản</th>
                   <th>Giá</th>
                   <th>Khuyến mãi (%)</th>
+                  <th>Tồn kho</th>
+                  <th>Trạng thái</th>
                   <th colSpan="2">Hành động</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={9}>
                       <Spinner
                         animation="border"
                         variant="success"
@@ -140,6 +146,8 @@ function BookList() {
                         </td>
                         <td className="price">{format.formatPrice(item.price)}</td>
                         <td>{item.discount}</td>
+                        <td>{item.stock == null ? "Chưa cập nhật" : item.stock === 0 ? "0 (hết hàng)" : item.stock}</td>
+                        <td>{{ active: "Đang bán", hidden: "Đang ẩn", discontinued: "Ngừng kinh doanh" }[item.status] || "Chưa đặt"}</td>
                         <td>
                           <Link
                             to={`/admin/book/update/${item._id}`}
@@ -165,7 +173,7 @@ function BookList() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={7}>Không có sản phẩm nào!</td>
+                    <td colSpan={9}>Không có sản phẩm nào!</td>
                   </tr>
                 )}
               </tbody>

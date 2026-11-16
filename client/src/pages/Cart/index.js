@@ -9,7 +9,6 @@ import CartItem from "../../components/Shop/CartItem";
 import format from "../../helper/format";
 import styles from "./Cart.module.css";
 
-import userApi from "../../api/userApi"
 import voucherApi from "../../api/voucherApi"
 import { updateVoucher } from "../../redux/actions/cart"
 
@@ -26,24 +25,10 @@ function Cart() {
   }, [voucher])
 
   useEffect(() => {
-    const addToCart = async() => {
-      try {
-        const { list } = cartData
-        const newList = list.map(item => {
-          return { product: item?.product._id, quantity: item?.quantity }
-        })
-        await userApi.updateCart(currentUser.userId, {cart: newList})
-      } catch (error) {
-        console.log(error)
-      }
-    }
-    if (currentUser && currentUser.userId) {
-      addToCart()
-    } else {
+    if (!currentUser.userId && !localStorage.getItem('accessToken')) {
       navigate({pathname: "/"})
     }
-
-  }, [cartData, currentUser, navigate])
+  }, [currentUser.userId, navigate])
 
   const handleNavigateToCheckout = (e) => {
     if (!currentUser.userId) {
@@ -102,6 +87,10 @@ function Cart() {
     } catch (error) {
       console.log(error)
     }
+  }
+
+  if (cartData.ownerId !== currentUser.userId) {
+    return <p className="text-center mt-4">Đang tải giỏ hàng...</p>
   }
 
   return (

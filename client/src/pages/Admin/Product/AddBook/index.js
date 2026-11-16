@@ -64,6 +64,10 @@ function AddBook() {
       size: "",
       price: "",
       discount: 0,
+      tags: "",
+      language: "",
+      stock: "",
+      status: "",
       image: "",
       description: "",
       author: [],
@@ -75,19 +79,62 @@ function AddBook() {
     validateOnBlur: true,
     validationSchema: Yup.object({
       bookId: Yup.string()
+        .transform((value) => value?.trim())
         .required("Không được bỏ trống trường này!")
         .test("is-use", "Mã sách đã tồn tại!", async function (value) {
+          if (!value) return true;
           try {
             const res = await bookApi.getByBookId(value);
             return res?.data?._id ? false : true;
           } catch (error) {
-            console.log(error)
+            // Backend vẫn kiểm tra trùng mã khi lưu nếu request kiểm tra này lỗi.
+            return true;
           }
         }),
-      name: Yup.string().required("Không được bỏ trống trường này!"),
+      name: Yup.string()
+        .transform((value) => value?.trim())
+        .required("Không được bỏ trống trường này!"),
+      year: Yup.number()
+        .transform((value, originalValue) => originalValue === "" ? undefined : value)
+        .typeError("Năm xuất bản phải là số nguyên hợp lệ!")
+        .integer("Năm xuất bản phải là số nguyên!")
+        .min(1000, "Năm xuất bản phải từ 1000 trở đi!")
+        .max(new Date().getFullYear() + 1, `Năm xuất bản không được vượt quá ${new Date().getFullYear() + 1}!`)
+        .test("finite", "Năm xuất bản phải là số hữu hạn!", value => value === undefined || Number.isFinite(value))
+        .notRequired(),
+      pages: Yup.number()
+        .transform((value, originalValue) => originalValue === "" ? undefined : value)
+        .typeError("Số trang phải là số nguyên dương!")
+        .integer("Số trang phải là số nguyên dương!")
+        .moreThan(0, "Số trang phải lớn hơn 0!")
+        .test("finite", "Số trang phải là số hữu hạn!", value => value === undefined || Number.isFinite(value))
+        .notRequired(),
       price: Yup.number()
         .typeError("Vui lòng nhập giá hợp lệ!")
-        .required("Không được bỏ trống trường này!"),
+        .required("Không được bỏ trống trường này!")
+        .moreThan(0, "Giá sách phải lớn hơn 0!")
+        .test("finite", "Giá sách phải là số hữu hạn!", value => value === undefined || Number.isFinite(value)),
+      discount: Yup.number()
+        .transform((value, originalValue) => originalValue === "" ? 0 : value)
+        .typeError("Giảm giá phải là số từ 0 đến 100!")
+        .min(0, "Giảm giá không được nhỏ hơn 0!")
+        .max(100, "Giảm giá không được vượt quá 100!")
+        .test("finite", "Giảm giá phải là số hữu hạn!", value => value === undefined || Number.isFinite(value)),
+      genre: Yup.array()
+        .of(Yup.object({ value: Yup.string().required() }))
+        .min(1, "Vui lòng chọn ít nhất một thể loại!"),
+      author: Yup.array()
+        .of(Yup.object({ value: Yup.string().required() }))
+        .min(1, "Vui lòng chọn ít nhất một tác giả!"),
+      publisher: Yup.string().required("Vui lòng chọn nhà xuất bản!"),
+      tags: Yup.string().test("tags", "Tối đa 20 từ khóa, mỗi từ khóa không quá 40 ký tự!", value => {
+        const tags = (value || "").split(",").map(tag => tag.trim()).filter(Boolean);
+        return tags.length <= 20 && tags.every(tag => tag.length <= 40);
+      }),
+      language: Yup.string().trim().max(50, "Ngôn ngữ không được vượt quá 50 ký tự!"),
+      stock: Yup.number().transform((value, originalValue) => originalValue === "" ? undefined : value)
+        .typeError("Tồn kho phải là số nguyên không âm!").integer("Tồn kho phải là số nguyên!").min(0, "Tồn kho không được âm!").notRequired(),
+      status: Yup.string().oneOf(["", "active", "hidden", "discontinued"], "Trạng thái không hợp lệ!"),
       image: Yup.mixed().required("Không được bỏ trống trường này!")
       .test("FILE_SIZE", "Kích thước file quá lớn!", (value) => !value || (value && value.size < 1024 * 1024))
       .test("FILE_FORMAT", "File không đúng định dạng!", (value) => 
@@ -96,19 +143,23 @@ function AddBook() {
     }),
     onSubmit: async () => {
       const { bookId, name, author, genre, publisher, description, 
-        year, pages, size, price, discount, image } = formik.values;
+        year, pages, size, price, discount, image, tags, language, stock, status } = formik.values;
       const genres = genre.map(item => item.value)
       const authors = author.map(item => item.value)
       try {
         const formData = new FormData();
         formData.append("file", image);
-        formData.append("upload_preset", "fti6du11");
+        formData.append("upload_preset", process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET);
         setLoading(true)
-        const resCloudinary = await axios.post("https://api.cloudinary.com/v1_1/dbynglvwk/image/upload", formData)
+        const resCloudinary = await axios.post(`https://api.cloudinary.com/v1_1/${process.env.REACT_APP_CLOUDINARY_CLOUD_NAME}/image/upload`, formData)
         const { secure_url, public_id } = resCloudinary.data
         if (secure_url && public_id) {
           const res = await bookApi.create({ 
             bookId, name, year, pages, size, price, discount, description,
+            tags: tags.split(",").map(tag => tag.trim()).filter(Boolean),
+            language: language.trim() || undefined,
+            stock: stock === "" ? undefined : stock,
+            status: status || undefined,
             author: authors,
             genre: genres,
             publisher: publisher,
@@ -191,11 +242,13 @@ function AddBook() {
                     <label className={styles.formLabel}>Tác giả</label>
                     <Select
                       isMulti={true}
+                      value={formik.values.author}
                       name="author"
                       required={true}
                       onChange={(option) => formik.setFieldValue("author", option)}
                       options={authorList}
                     />
+                    {formik.errors.author && <Form.Control.Feedback type="invalid" className="d-block">{formik.errors.author}</Form.Control.Feedback>}
                   </div>
                 </Col>
                 <Col xl={4}>
@@ -203,11 +256,13 @@ function AddBook() {
                     <label className={styles.formLabel}>Thể loại</label>
                     <Select
                       isMulti={true}
+                      value={formik.values.genre}
                       name="genre"
                       required={true}
                       onChange={(option) => formik.setFieldValue("genre", option)}
                       options={genreList}
                     />
+                    {formik.errors.genre && <Form.Control.Feedback type="invalid" className="d-block">{formik.errors.genre}</Form.Control.Feedback>}
                   </div>
                 </Col>
                 <Col xl={4}>
@@ -227,6 +282,7 @@ function AddBook() {
                           </option>
                         ))}
                     </select>
+                    {formik.errors.publisher && <Form.Control.Feedback type="invalid" className="d-block">{formik.errors.publisher}</Form.Control.Feedback>}
                   </div>
                 </Col>
               </Row>
@@ -349,6 +405,37 @@ function AddBook() {
                         {formik.errors.discount}
                       </Form.Control.Feedback>
                     )}
+                  </div>
+                </Col>
+              </Row>
+              <Row>
+                <Col xl={6}>
+                  <div className="form-group">
+                    <label className={styles.formLabel}>Từ khóa (cách nhau bằng dấu phẩy)</label>
+                    <input className={`form-control ${formik.errors.tags ? "is-invalid" : ""}`} name="tags" value={formik.values.tags} onChange={formik.handleChange} onBlur={formik.handleBlur} placeholder="Python, Lập trình, Người mới bắt đầu" />
+                    {formik.errors.tags && <Form.Control.Feedback type="invalid">{formik.errors.tags}</Form.Control.Feedback>}
+                  </div>
+                </Col>
+                <Col xl={3}>
+                  <div className="form-group">
+                    <label className={styles.formLabel}>Ngôn ngữ</label>
+                    <input className={`form-control ${formik.errors.language ? "is-invalid" : ""}`} name="language" value={formik.values.language} onChange={formik.handleChange} onBlur={formik.handleBlur} maxLength={50} placeholder="Tiếng Việt" />
+                    {formik.errors.language && <Form.Control.Feedback type="invalid">{formik.errors.language}</Form.Control.Feedback>}
+                  </div>
+                </Col>
+                <Col xl={3}>
+                  <div className="form-group">
+                    <label className={styles.formLabel}>Tồn kho (để trống nếu chưa biết)</label>
+                    <input type="number" min="0" step="1" className={`form-control ${formik.errors.stock ? "is-invalid" : ""}`} name="stock" value={formik.values.stock} onChange={formik.handleChange} onBlur={formik.handleBlur} />
+                    {formik.errors.stock && <Form.Control.Feedback type="invalid">{formik.errors.stock}</Form.Control.Feedback>}
+                  </div>
+                </Col>
+                <Col xl={3}>
+                  <div className="form-group">
+                    <label className={styles.formLabel}>Trạng thái</label>
+                    <select className="form-select" name="status" value={formik.values.status} onChange={formik.handleChange}>
+                      <option value="">Chưa đặt</option><option value="active">Đang bán</option><option value="hidden">Đang ẩn</option><option value="discontinued">Ngừng kinh doanh</option>
+                    </select>
                   </div>
                 </Col>
               </Row>

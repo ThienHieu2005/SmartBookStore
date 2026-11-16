@@ -1,39 +1,44 @@
 const nodemailer = require('nodemailer')
-const { google } = require('googleapis')
-require('dotenv').config()
 
-const OAuth2 = google.auth.OAuth2
+const {
+    GOOGLE_GMAIL_CLIENT_ID: clientId,
+    GOOGLE_GMAIL_CLIENT_SECRET: clientSecret,
+    GOOGLE_GMAIL_REFRESH_TOKEN: refreshToken
+} = process.env
 
-const OAuth2Client = new OAuth2(
-    process.env.GOOGLE_GMAIL_CLIENT_ID,
-    process.env.GOOGLE_GMAIL_CLIENT_SECRET,
-    process.env.GOOGLE_GMAIL_REDIRECT_URI
-)
+const missingConfig = Object.entries({
+    GOOGLE_GMAIL_CLIENT_ID: clientId,
+    GOOGLE_GMAIL_CLIENT_SECRET: clientSecret,
+    GOOGLE_GMAIL_REFRESH_TOKEN: refreshToken
+}).filter(([, value]) => !value?.trim()).map(([name]) => name)
 
-OAuth2Client.setCredentials({
-    refresh_token: process.env.GOOGLE_GMAIL_REFRESH_TOKEN
-})
+const configurationError = missingConfig.length > 0
+    ? `Chưa cấu hình gửi email Gmail. Thiếu biến môi trường: ${missingConfig.join(', ')}`
+    : null
 
-const accessToken = new Promise((resolve, reject) => {
-    OAuth2Client.getAccessToken((err, token) => {
-        if (err) reject(err)
-        resolve(token)
-    })
-})
+function ensureEmailConfigured() {
+    if (configurationError) throw new Error(configurationError)
+}
 
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
-    auth: {
-        type: 'OAuth2',
-        user: 'project.php.nhncomputer@gmail.com',
-        clientId: process.env.GOOGLE_GMAIL_CLIENT_ID,
-        accessToken,
-        clientSecret: process.env.GOOGLE_GMAIL_CLIENT_SECRET,
-        refreshToken: process.env.GOOGLE_GMAIL_REFRESH_TOKEN
+let transporter
+if (configurationError) {
+    console.warn(configurationError)
+    transporter = {
+        async sendMail() {
+            ensureEmailConfigured()
+        }
     }
-})
+} else {
+    transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            type: 'OAuth2',
+            user: 'project.php.nhncomputer@gmail.com',
+            clientId,
+            clientSecret,
+            refreshToken
+        }
+    })
+}
 
-module.exports = { transporter }
+module.exports = { transporter, ensureEmailConfigured, isEmailConfigured: !configurationError }

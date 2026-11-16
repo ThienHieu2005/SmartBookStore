@@ -6,6 +6,7 @@ import moment from "moment";
 import { FaSearch } from "react-icons/fa";
 
 import userApi from "../../../api/userApi"
+import { roleEnum } from "../../../constants/roles";
 
 export default function StaffList() {
 
@@ -31,7 +32,7 @@ export default function StaffList() {
         const { data, pagination } = await userApi.getAll({ 
           page, 
           limit: 10,
-          query: { role: 2 } 
+          query: { role: roleEnum.Staff }
         });
         setLoading(false);
         setStaffData({ list: data, totalPage: pagination.totalPage });

@@ -1,26 +1,33 @@
 .searchWrapper {
     position: relative;
-    margin-right: 50px;
+    margin-right: 24px;
 }
 
  .formControl {
-    width: 400px;
-    border: 1px solid #E1E1E1;
+    width: 350px;
+    min-height: 44px;
+    padding-right: 56px;
+    border: 1px solid #e0e8e1;
+    border-radius: 12px;
+    background: #f9fbf9;
 }
 
 
 .formControl:focus {
-    border-color: #80bdff;
+    border-color: #7bb391;
   }
 
 .searchBtn {
     position: absolute;
     right: 0;
     color: white;
-    background-color: #80C063;;
+    background-color: #2f7a4e;
     line-height: normal;
-    width: 50px;
-    height: 100%;
+    width: 44px;
+    height: calc(100% - 8px);
+    top: 4px;
+    right: 4px;
+    border-radius: 9px;
 }
 
 .resetKey {
@@ -49,7 +56,10 @@
     position: absolute;
     background-color: white;
     z-index: 1000;
-    box-shadow: 0 0 5px 1px rgba(0, 0, 0, 0.15);
+    border: 1px solid #e8eee9;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 14px 32px rgba(31, 64, 43, .12);
     width: 100%;
 }
 

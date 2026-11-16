@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Routes, Route } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { ToastContainer } from "react-toastify"
@@ -52,11 +52,16 @@ import authApi from "./api/authApi";
 import { login, logout } from "./redux/actions/auth";
 import { setCart } from "./redux/actions/cart";
 
-import { roleEnum } from  "./layouts/components/SideBar/routes"
+import { hasAnyRole, isKnownRole, roleEnum } from "./constants/roles"
 
 function App() {
 
   const currentUser = useSelector((state) => state.auth)
+  const hasKnownRole = isKnownRole(currentUser.role)
+  const { userId } = currentUser
+  const { list: cartList, ownerId: cartOwnerId } = useSelector((state) => state.cart)
+  const loadedCart = useRef(null)
+  const cartWrites = useRef(Promise.resolve())
 
   const dispatch = useDispatch()
   useEffect(() => {
@@ -66,37 +71,48 @@ function App() {
         const { email, fullName, phoneNumber, avatar, _id, role } = data?.user
         dispatch(login({email, fullName, phoneNumber, avatar, userId: _id, role}))
       } catch (error) {
-        if (error.response.status === 403 || error.response.status === 401) {
+        if ([401, 403].includes(error.response?.status)) {
           localStorage.removeItem('accessToken')
           dispatch(logout())
         }
       }
     }
+    if (localStorage.getItem('accessToken') && !userId) fetchData()
+  }, [dispatch, userId])
+
+  useEffect(() => {
+    if (!userId) return
+    let active = true
     const getCart = async () => {
       try {
-          const { data } = await userApi.getCart(currentUser.userId)
-          const newList = data.cart.map(item => {
-            const { price, discount } = item.product
-            const newPrice = price - price * ((discount > 0 ? discount : 0) / 100)
-            return {
-              ...item,
-              product: { ...item.product, price: newPrice },
-              totalPriceItem: newPrice * item.quantity
-            }
-          })
-          dispatch(setCart(newList))
+        const { data } = await userApi.getCart(userId)
+        if (!active) return
+        const newList = data.cart.filter(item => item.product).map(item => {
+          const { price, discount } = item.product
+          const newPrice = price - price * ((discount > 0 ? discount : 0) / 100)
+          return {
+            ...item,
+            product: { ...item.product, price: newPrice },
+            totalPriceItem: newPrice * item.quantity
+          }
+        })
+        loadedCart.current = newList
+        dispatch(setCart(newList, userId))
       } catch (error) {
         console.log(error)
       }
     }
-    const token = localStorage.getItem('accessToken')
-    if (token && !currentUser.userId) {
-      fetchData()
-    }
-    if (token && currentUser.userId) {
-      getCart()
-    }
-  },[dispatch, currentUser])
+    getCart()
+    return () => { active = false }
+  }, [dispatch, userId])
+
+  useEffect(() => {
+    if (!userId || cartOwnerId !== userId || cartList === loadedCart.current) return
+    const cart = cartList.map(item => ({ product: item.product._id, quantity: item.quantity }))
+    cartWrites.current = cartWrites.current
+      .then(() => userApi.updateCart(userId, { cart }))
+      .catch(error => console.log(error))
+  }, [cartList, cartOwnerId, userId])
 
 
   return (
@@ -122,8 +138,8 @@ function App() {
 
         </Route>
 
-        {currentUser && currentUser.role !== -1 && (
-            <Route path="/" element={<ProtectedRoute isAllowed={currentUser.role === roleEnum.Customer} />}>
+        {hasKnownRole && (
+            <Route path="/" element={<ProtectedRoute isAllowed={hasAnyRole(currentUser.role, [roleEnum.Customer])} />}>
               <Route element={<DefaultLayout />}>
                 <Route element={<AccountLayout />}>
                   <Route path="don-hang" element={<Order />} />
@@ -135,8 +151,8 @@ function App() {
            )
         }
 
-        {currentUser && currentUser.role !== -1 && (
-          <Route path="/admin" element={<ProtectedRoute isAllowed={currentUser.role >= roleEnum.Staff} />}>
+        {hasKnownRole && (
+          <Route path="/admin" element={<ProtectedRoute isAllowed={hasAnyRole(currentUser.role, [roleEnum.Staff, roleEnum.Admin])} />}>
             <Route element={<AdminLayout />}>
               <Route path="" element={<Analytics />} />
 
@@ -156,8 +172,8 @@ function App() {
           </Route>
         )}
 
-        {currentUser && currentUser.role !== -1 && (
-          <Route path="/admin" element={<ProtectedRoute isAllowed={currentUser.role === roleEnum.Admin} />}>
+        {hasKnownRole && (
+          <Route path="/admin" element={<ProtectedRoute isAllowed={hasAnyRole(currentUser.role, [roleEnum.Admin])} />}>
             <Route element={<AdminLayout />}>
 
               <Route path="staff" element={<StaffList />} />
@@ -166,7 +182,7 @@ function App() {
           </Route>
         )}
 
-        {currentUser.role === -1 && (
+        {!hasKnownRole && (
           <>
             <Route path="/admin/*" element={<AccessDenied />} />
             <Route path="/don-hang" element={<AccessDenied />} />

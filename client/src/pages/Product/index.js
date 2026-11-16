@@ -11,14 +11,14 @@ import styles from "./Product.module.css";
 
 export default function Product() {
 
-  const [bookData, setBookData] = useState({})
+  const [bookData, setBookData] = useState({ books: [], totalPage: 0 })
   const [genreList, setGenreList] = useState([])
   const [page, setPage] = useState(1);
   
   const [sortString, setSortString] = useState("createdAt|-1")
   const [genresChecked, setGenresChecked] = useState([])
 
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -129,13 +129,15 @@ export default function Product() {
               </div>
               <div className={styles.products}>
                 <Row>
-                  {!loading && bookData.books && bookData.books.length > 0
+                  {loading
+                    ? <Loading />
+                    : bookData.books.length > 0
                     ? bookData.books.map((book) => (
                         <Col xl={3} key={book._id}>
                           <BookItem data={book} />
                         </Col>
                       ))
-                    : <Loading />}
+                    : <p>Không có sách phù hợp.</p>}
                 </Row>
               </div>
               <div className={styles.pagination}>

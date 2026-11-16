@@ -1,12 +1,24 @@
 const bookService = require('../services/books.service')
 const redis = require('../config/redis')
 const { cloudinary } = require('../config/cloudinary')
+const { invalidateBookCache } = require('../utils/bookCache')
+const { parseBookPagination, getTotalPage } = require('../utils/bookPagination')
+
+const logCacheError = (error) => console.warn('Lỗi bộ nhớ đệm sách:', error.message)
+const sendBookWriteError = (res, error) => {
+    if (error.status === 409 || error.code === 11000) {
+        return res.status(409).json({ message: error.code === 11000 ? 'Mã sách đã tồn tại!' : error.message, error: 1 })
+    }
+    if (error.status === 400 || error.name === 'ValidationError' || error.name === 'CastError') {
+        return res.status(400).json({ message: error.message, error: 1 })
+    }
+    return res.status(500).json({ message: 'Có lỗi hệ thống khi lưu thông tin sách!', error: 1 })
+}
 
 const bookController = {
     getAll: async(req, res) => {
         try {
-            const page = req.query.page ? parseInt(req.query.page) : 1
-            const limit = req.query.limit ? parseInt(req.query.limit) : 0
+            const { page, limit } = parseBookPagination(req.query)
             const sort = req.query.sort ? req.query.sort : { createdAt: -1 }
             const { query } = req.query
 
@@ -17,7 +29,7 @@ const bookController = {
             let count, data, totalPage
 
             try {
-                const cache = await redis.get(key)
+                const cache = await redis?.get(key)
 
                 if (cache) {
                     const json = JSON.parse(cache)
@@ -27,17 +39,17 @@ const bookController = {
                     const [countNum, bookList] = await bookService.getAll({query: queryObj, page, limit, sort})
                     count = countNum
                     data = bookList
-                    redis.setex(key, 600, JSON.stringify({count, data}))
+                    redis?.setex(key, 600, JSON.stringify({count, data})).catch(logCacheError)
                 }
 
             } catch (error) {
                 const [countNum, bookList] = await bookService.getAll({query: queryObj, page, limit, sort})
                 count = countNum
                 data = bookList
-                console.log('Redis error::::' + error.message)
+                logCacheError(error)
             }
 
-            totalPage = Math.ceil(count / limit)
+            totalPage = getTotalPage(count, limit)
             
             res.status(200).json({
                 message: 'success',
@@ -51,8 +63,9 @@ const bookController = {
                 }
             })
         } catch (error) {
-            res.status(500).json({
-                message: `Có lỗi xảy ra! ${error.message}`,
+            const status = error.status === 400 ? 400 : 500
+            res.status(status).json({
+                message: status === 400 ? error.message : `Có lỗi xảy ra! ${error.message}`,
                 error: 1,
             })
         }
@@ -116,18 +129,18 @@ const bookController = {
             const key = `Book::${slug}`
 
             try {
-                const cache = await redis.get(key)
+                const cache = await redis?.get(key)
 
                 if (cache) {
                     response = JSON.parse(cache).response
                 } else {
                     response = await bookService.getBySlug(slug)
-                    redis.setex(key, 600, JSON.stringify({response}))
+                    redis?.setex(key, 600, JSON.stringify({response})).catch(logCacheError)
                 }
 
             } catch (error) {
                 response = await bookService.getBySlug(slug)
-                console.log('Redis error::::' + error.message)
+                logCacheError(error)
             }
 
             if (response) {
@@ -178,9 +191,10 @@ const bookController = {
     searchBook: async(req, res) => {
         try {
             const { key } = req.query
-            const page = req.query.page ? parseInt(req.query.page) : 1
-            const limit = req.query.limit ? parseInt(req.query.limit) : 0
-            const data = await bookService.search({key, page, limit})
+            const { page, limit } = parseBookPagination(req.query)
+            const keyword = typeof key === 'string' ? key.trim() : ''
+            const escapedKey = keyword.replace(/[.*+?^$(){}|[\]\\]/g, '\\$&')
+            const data = escapedKey ? await bookService.search({key: escapedKey, page, limit}) : []
 
             res.status(200).json({
                 message: 'success',
@@ -189,51 +203,51 @@ const bookController = {
             })
           
         } catch (error) {
-            res.status(500).json({
-                message: `Có lỗi xảy ra! ${error.message}`,
+            const status = error.status === 400 ? 400 : 500
+            res.status(status).json({
+                message: status === 400 ? error.message : `Có lỗi xảy ra! ${error.message}`,
                 error: 1,
             })
         }
     },
     create: async(req, res) => {
         try {
-            const { bookId } = req.body
-            const isExist = await bookService.getByBookId(bookId)
-            if (isExist) return res.status(400).json({message: "bookId đã tồn tại!", error: 1}) 
             const data = await bookService.create(req.body)
+            await invalidateBookCache(redis)
             return res.status(201).json({
                 message: 'success',
                 error: 0,
                 data
             })
         } catch (error) {
-            res.status(400).json({
-                message: `Có lỗi xảy ra! ${error.message}`,
-                error: 1,
-            })
+            return sendBookWriteError(res, error)
         }
     },
     updateById: async(req, res) => {
         try {
             const { id } = req.params
-            const { imageUrl, publicId } = req.body
-            let data = null
-            if (imageUrl && publicId) {
-                const { data: bookUpdate } = await bookService.getById(id)
-                const publicIdDelete = bookUpdate.publicId
-                if (publicIdDelete) {
-                    await cloudinary.uploader.destroy(publicIdDelete)
+            const body = req.body || {}
+            const { imageUrl, publicId } = body
+            const bookBeforeUpdate = await bookService.getById(id)
+            if (!bookBeforeUpdate) {
+                return res.status(404).json({
+                    message: `Không tìm thấy sách có id:${id}`,
+                    error: 1,
+                    data: null
+                })
+            }
+            const data = await bookService.updateById(id, body)
+
+            if (data && imageUrl && publicId && bookBeforeUpdate.publicId) {
+                try {
+                    await cloudinary.uploader.destroy(bookBeforeUpdate.publicId)
+                } catch (cleanupError) {
+                    console.warn('Không thể dọn ảnh bìa cũ trên Cloudinary.')
                 }
-                data = await bookService.updateById(id, req.body)
-            } else {
-                data = await bookService.updateById(id, req.body)
             }
          
             if (data) {
-                
-                const keys = await redis.keys('Book::*')
-                if (keys.length > 0)
-                    redis.del(keys)
+                await invalidateBookCache(redis)
                 
                 return res.status(200).json({
                     message: 'success',
@@ -249,10 +263,7 @@ const bookController = {
             }
             
         } catch (error) {
-            res.status(400).json({
-                message: `Có lỗi xảy ra! ${error.message}`,
-                error: 1,
-            })
+            return sendBookWriteError(res, error)
         }
     },
     deleteById: async(req, res) => {
@@ -262,7 +273,8 @@ const bookController = {
             if (isOrdered.length > 0) return res.status(400).json({message: 'Sản phẩm đã được mua!',error: 1})
             const data = await bookService.deleteById(id)
             if (data) {
-                await cloudinary.uploader.destroy(data?.publicId)
+                await invalidateBookCache(redis)
+                if (data.publicId) await cloudinary.uploader.destroy(data.publicId)
 
                 return res.status(200).json({
                     message: 'success',

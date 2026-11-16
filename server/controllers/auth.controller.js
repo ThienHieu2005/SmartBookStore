@@ -4,10 +4,12 @@ const OAuth2 = google.auth.OAuth2
 const OAuth2Client = new OAuth2()
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const { isObjectIdOrHexString } = require('mongoose')
 
 const { generateAccessToken, generateRefreshToken, generateVerifyCode } = require('../utils/auth')
-const { transporter } = require('../config/nodemailer')
+const { transporter, ensureEmailConfigured, isEmailConfigured } = require('../config/nodemailer')
 const userService = require('../services/user.service')
+const { RoleEnum } = require('../utils/enum')
 
 const authController = {
     loginWithGoogle: async(req, res) => {
@@ -25,9 +27,10 @@ const authController = {
             if (data) {
                 const  { verified_email, email, name, picture, id } = data
                 if (verified_email) {
-                    const user = await userService.getByServiceId(id)
+                    const user = await userService.getByServiceId(id, 'Google')
                     
                     if (user) {
+                        if (user.status !== 1) return res.status(403).json({ message: '403 Forbidden' })
                         const { fullName, email, avatar, phoneNumber, role, _id } = user
                         const token = generateAccessToken({ userId: _id, role })
                         const refreshToken = generateRefreshToken(_id)
@@ -47,8 +50,8 @@ const authController = {
                             service: "Google", serviceId: id,
                             status: 1,
                         })
-                        const token = generateAccessToken({ userId: newUser?._id, role: 0 })
-                        const refreshToken = generateRefreshToken({ userId: newUser?._id, role: 0 })
+                        const token = generateAccessToken({ userId: newUser?._id, role: newUser?.role ?? RoleEnum.Customer })
+                        const refreshToken = generateRefreshToken(newUser?._id)
                         res.cookie('refreshToken', refreshToken, {
                             httpOnly: true,
                             secure: false,
@@ -56,7 +59,7 @@ const authController = {
                         })
                         return res.status(200).json({
                             token,
-                            user: newUser
+                            user: { fullName: name, email, avatar: newUser.avatar, userId: newUser._id, role: newUser.role }
                         })
                     }
                 }
@@ -76,78 +79,51 @@ const authController = {
             })
         }
     },
-    loginWithFacebook: async(req, res) => {
-        try {
-            const { email, name, avatar, id } = req.body
-            const user = await userService.getByServiceId(id)
-            if (user) {
-                const { fullName, email, avatar, role, _id } = user
-                const token = generateAccessToken({ userId: _id, role })
-                const refreshToken = generateRefreshToken(_id)
-                res.cookie('refreshToken', refreshToken, {
-                    httpOnly: true,
-                    secure: false,
-                    maxAge: 1000 * 60 * 60 * 24 * 7,
-                })
-                return res.status(200).json({
-                    token,
-                    user: { fullName, email, avatar, userId: _id, role }
-                })
-            } else {
-                const newUser = await userService.create({
-                    email, fullName: name, 
-                    avatar: { url: avatar }, 
-                    service: "Facebook", serviceId: id, 
-                    status: 1
-                })
-                const token = generateAccessToken({ userId: newUser?._id, role: 0 })
-                const refreshToken = generateRefreshToken({ userId: newUser?._id, role: 0 })
-                res.cookie('refreshToken', refreshToken, {
-                    httpOnly: true,
-                    secure: false,
-                    maxAge: 1000 * 60 * 60 * 24 * 7,
-                })
-                return res.status(200).json({
-                    token,
-                    user: newUser
-                })
-            }
-        } catch (error) {
-            res.status(500).json({
-                message: `Có lỗi xảy ra! ${error.message}`,
-                error: 1,
-            })
-        }
+    loginWithFacebook: (req, res) => {
+        return res.status(503).json({ error: 1, message: 'Đăng nhập Facebook chưa có xác minh phía máy chủ.' })
     },
     register: async(req, res) => {
         try {
             const { email, fullName, password } = req.body
+            if (![email, fullName, password].every((value) => typeof value === 'string' && value.trim())) {
+                return res.status(400).json({ error: 1, message: 'Vui lòng điền đầy đủ thông tin đăng ký!' })
+            }
 
             const checkEmail = await userService.getByEmail(email)
             if (checkEmail)  return res.status(400).json({ message: 'Email đã tồn tại!', error: 1,})
+            const isDevelopment = (process.env.NODE_ENV || 'development') === 'development'
+            if (!isEmailConfigured && !isDevelopment) ensureEmailConfigured()
             
             const hashPassword = await bcrypt.hash(password, 10)
 
-            const result = await userService.register({email, fullName, password: hashPassword})
-
-            const code = generateVerifyCode({email})
-            const host = req.get('origin')
-            const link = `${host}/services/user/verify?active_code=${code}`
-            const resultSendMail = await transporter.sendMail({
-                from: '"BookStore" <project.php.nhncomputer@gmail.com>',
-                to: email,
-                subject: `[BookStore] Chúc mừng bạn đăng ký thành công!`,
-                html: ` <h3>Xin chào ${fullName},</h3>
-                        <h3>Bạn vừa tiến hành đăng ký tài khoản tại BookStore!</h3>
-                        <p>Chúc mừng bạn trở thành thành viên BookStore.</p>
-                        <p>Username : ${email}</p>
-                        <a href="${link}">Nhấn vào đây để kích hoạt</a>`
+            // Local development can be used without Gmail; activate only local accounts.
+            const result = await userService.register({
+                email,
+                fullName,
+                password: hashPassword,
+                status: !isEmailConfigured && isDevelopment ? 1 : undefined,
             })
-            const { password : pw, ...data } = result
+
+            if (isEmailConfigured) {
+                const code = generateVerifyCode({email})
+                const host = req.get('origin')
+                const link = `${host}/services/user/verify?active_code=${code}`
+                await transporter.sendMail({
+                    from: '"BookStore" <project.php.nhncomputer@gmail.com>',
+                    to: email,
+                    subject: `[BookStore] Chúc mừng bạn đăng ký thành công!`,
+                    html: ` <h3>Xin chào ${fullName},</h3>
+                            <h3>Bạn vừa tiến hành đăng ký tài khoản tại BookStore!</h3>
+                            <p>Chúc mừng bạn trở thành thành viên BookStore.</p>
+                            <p>Username : ${email}</p>
+                            <a href="${link}">Nhấn vào đây để kích hoạt</a>`
+                })
+            }
             res.status(201).json({
-                message: 'success',
+                message: isEmailConfigured ? 'success' : 'Tạo tài khoản thành công trong môi trường development; tài khoản đã được kích hoạt vì Gmail chưa cấu hình.',
                 error: 0,
-                data: data
+                emailSent: isEmailConfigured,
+                data: result
             })
             
         } catch (error) {
@@ -195,16 +171,16 @@ const authController = {
             const { active_code } = req.query
 
             const { email } = jwt.verify(active_code, process.env.JWT_ACCESS_TOKEN_SECRET);
-            if (!email) res.status(400).json({error: "Token không hợp lệ!"})
-            const user = await userService.getByEmail(email)
-            if (user) {
+            if (typeof email !== 'string') return res.status(400).json({ error: 'Token không hợp lệ!' })
+            const user = await userService.getByEmailRegister(email)
+            if (user && user.role === RoleEnum.Customer) {
                 await userService.updateStatus(user._id, { status: 1 })
                 return res.status(200).json({message: "Xác minh tài khoản thành công!!"})
                 
             }
             return res.status(400).json({error: "Không tìm thấy khách hàng!!"})
         } catch (error) {
-            console.log(error)
+            if (error instanceof jwt.JsonWebTokenError) return res.status(400).json({ error: 'Token không hợp lệ!' })
             res.status(500).json({
                 status: "error",
                 error: error.message
@@ -214,17 +190,20 @@ const authController = {
     loginBookStore: async(req, res) => {
         try {
             const { email, password } = req.body
+            if (typeof email !== 'string' || typeof password !== 'string') {
+                return res.status(400).json({ error: 1, message: 'Tài khoản, mật khẩu không đúng!' })
+            }
             const user = await userService.getByEmailRegister(email)
 
-            if (!user) return res.status(400).json({error: 1, message: 'Tài khoản, mật khẩu không đúng!'})
+            if (!user?.password) return res.status(400).json({error: 1, message: 'Tài khoản, mật khẩu không đúng!'})
 
             const { password: passwordDB, status,  fullName, phoneNumber, avatar, role, _id } = user
 
             const checkPassword = await bcrypt.compare(password, passwordDB)
             if (!checkPassword) return res.status(400).json({error: 1, message: 'Tài khoản, mật khẩu không đúng!'})
 
-            if (status === 0 && role === 0)  return res.status(400).json({ error: 2, message: "Tài khoản của bạn chưa được kích hoạt!" })
-            if (status === 0 && role === 2)  return res.status(400).json({ error: 3, message: "Tài khoản của bạn đã bị khóa!" })
+            if (status !== 1 && role === RoleEnum.Customer) return res.status(400).json({ error: 2, message: 'Tài khoản của bạn chưa được kích hoạt!' })
+            if (status !== 1) return res.status(400).json({ error: 3, message: 'Tài khoản của bạn đã bị khóa!' })
             
             const token = generateAccessToken({ userId: _id, role })
             const refreshToken = generateRefreshToken(_id)
@@ -256,7 +235,7 @@ const authController = {
                     error: 1,
                 })
             }
-            const tokenReset = generateAccessToken({userId: user._id})
+            const tokenReset = generateVerifyCode({ userId: user._id, purpose: 'password-reset' })
             const host = req.get('origin')
             const link = `${host}/dat-lai-mat-khau/${tokenReset}`
             const resultSendMail = await transporter.sendMail({
@@ -289,22 +268,22 @@ const authController = {
         try {
             const { token, password } = req.body
 
-            jwt.verify(token, process.env.JWT_ACCESS_TOKEN_SECRET, async (err, data) => {
-                if (err) return res.status(400).json({error: 1, message: 'Token không hợp lệ!'})
-                const { userId } = data
-                const user = await userService.getById(userId)
-                if (user) {
-                    const hashPassword = await bcrypt.hash(password, 10)
-                    const result = await userService.handleResetPassword(userId, {password: hashPassword})
-                    return res.status(200).json({
-                        error: 0,
-                        message: 'success',
-                        result
-                    })
-                }
-            })
+            const { userId, purpose } = jwt.verify(token, process.env.JWT_ACCESS_TOKEN_SECRET)
+            if (purpose !== 'password-reset' || !isObjectIdOrHexString(userId)) {
+                return res.status(400).json({ error: 1, message: 'Token không hợp lệ!' })
+            }
+            if (typeof password !== 'string' || !password.trim()) {
+                return res.status(400).json({ error: 1, message: 'Vui lòng nhập mật khẩu mới!' })
+            }
+            const hashPassword = await bcrypt.hash(password, 10)
+            const result = await userService.handleResetPassword(userId, { password: hashPassword })
+            if (!result) return res.status(400).json({ error: 1, message: 'Tài khoản không tồn tại!' })
+            return res.status(200).json({ error: 0, message: 'success' })
             
         } catch (error) {
+            if (error instanceof jwt.JsonWebTokenError) {
+                return res.status(400).json({ error: 1, message: 'Token không hợp lệ!' })
+            }
             res.status(500).json({
                 message: `Có lỗi xảy ra! ${error.message}`,
                 error: 1,
@@ -332,20 +311,28 @@ const authController = {
         try {
             const refreshToken = req.cookies.refreshToken
             if (!refreshToken) return res.status(401).json({message: '401 Unauthorized'})
-            jwt.verify(refreshToken, process.env.JWT_REFRESH_TOKEN_SECRET, async (err, data) => {
-                if (err) return res.status(403).json({message: '403 Forbidden'})
-                const { userId } = data
-                const { role } = await userService.getById(userId)
-                const newToken = generateAccessToken({userId, role})
-                const newRefreshToken = generateRefreshToken(userId)
-                res.cookie('refreshToken', newRefreshToken, {
-                    httpOnly: true,
-                    secure: false,
-                    maxAge: 1000 * 60 * 60 * 24 * 7,
-                })
-                return res.status(200).json({
-                    token: newToken,
-                })
+            let data
+            try {
+                data = jwt.verify(refreshToken, process.env.JWT_REFRESH_TOKEN_SECRET)
+            } catch {
+                return res.status(403).json({message: '403 Forbidden'})
+            }
+
+            // Older social logins wrapped the ID in an object.
+            const userId = typeof data?.userId === 'string' ? data.userId : data?.userId?.userId
+            if (!isObjectIdOrHexString(userId)) return res.status(403).json({message: '403 Forbidden'})
+            const user = await userService.getById(userId)
+            if (!user || user.status !== 1) return res.status(403).json({message: '403 Forbidden'})
+
+            const newToken = generateAccessToken({userId, role: user.role})
+            const newRefreshToken = generateRefreshToken(userId)
+            res.cookie('refreshToken', newRefreshToken, {
+                httpOnly: true,
+                secure: false,
+                maxAge: 1000 * 60 * 60 * 24 * 7,
+            })
+            return res.status(200).json({
+                token: newToken,
             })
             
         } catch (error) {

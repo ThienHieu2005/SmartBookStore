@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+const { RoleEnum } = require('../utils/enum')
 
 const Schema = mongoose.Schema
 
@@ -33,11 +34,17 @@ const userSchema = new Schema({
         product: { type: mongoose.Schema.Types.ObjectId, ref: 'Book', require: true },
         quantity: { type: Number, default: 1 },
     }],
-    role: { type: Number, default: 0 },
+    role: { type: Number, enum: Object.values(RoleEnum), default: RoleEnum.Customer },
     status: { type: Number, default: 0 }
   
 }, {
-    timestamps: true
+    timestamps: true,
+    toJSON: {
+        transform(doc, result) {
+            delete result.password
+            return result
+        }
+    }
 })
 
 userSchema.index({email: 1, serviceId: -1})

@@ -9,8 +9,9 @@ const orderService = {
             Order.find(query).skip(skip).limit(limit).sort(sort)])
 
     },
-    getById: async(id) => {
-        return await Order.findById(id).populate("user voucher").populate("products.product").populate("tracking.user", "fullName")
+    getById: async(id, ownerId) => {
+        const filter = ownerId ? { _id: id, user: ownerId } : { _id: id }
+        return await Order.findOne(filter).populate("user voucher").populate("products.product").populate("tracking.user", "fullName")
     },
     create: async({ userId, products, delivery, voucherId, cost, method, paymentId }) => {
         const newOrder = new Order({
@@ -34,8 +35,8 @@ const orderService = {
         }, {new: true})
        
     },
-    updatePaymentId: async(orderId, { paymentId }) => {
-        return await Order.findByIdAndUpdate(orderId,  { paymentId }, {new: true})
+    updatePaymentId: async(orderId, ownerId, { paymentId }) => {
+        return await Order.findOneAndUpdate({ _id: orderId, user: ownerId }, { paymentId }, { new: true })
     },
     addTracking: async (orderId, { status, time, userId }) =>{
         return await Order.findByIdAndUpdate(orderId, {

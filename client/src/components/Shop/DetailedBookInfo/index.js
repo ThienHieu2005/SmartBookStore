@@ -39,6 +39,18 @@ function DetailedBookInfo({ data }) {
             <div>{data.pages}</div>
           </div>
         ) : null}
+        {data.language ? (
+          <div className={styles.detail_info_item}>
+            <div>Ngôn ngữ</div>
+            <div>{data.language}</div>
+          </div>
+        ) : null}
+        {Array.isArray(data.tags) && data.tags.length > 0 ? (
+          <div className={styles.detail_info_item}>
+            <div>Chủ đề</div>
+            <div>{data.tags.join(", ")}</div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

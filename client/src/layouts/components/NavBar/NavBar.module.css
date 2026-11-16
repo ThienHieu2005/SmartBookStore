@@ -5,24 +5,29 @@
 .navbar {
     justify-content: flex-start;
     padding: 0;
+    gap: 4px;
 }
 
 .navItem a {
     display: block;
-    padding: 0px 20px;
+    padding: 0 15px;
+    color: #536158;
+    font-size: 14px;
     font-weight: 600;
-    line-height: 40px;
+    line-height: 38px;
+    border-radius: 10px;
+    transition: background .18s ease, color .18s ease;
 }
 
 
 .navItem a:hover {
-    color: #539E31;
+    color: #205b3a;
+    background: #f2f7f3;
 }
 
 .navItem a.active {
-    background-color: #539E31;
-    color: white;
-    border-radius: 4px;
+    background-color: #e9f4ec;
+    color: #205b3a;
 }
 
 /* navbar mobile */

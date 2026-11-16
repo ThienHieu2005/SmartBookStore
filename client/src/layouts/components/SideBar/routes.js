@@ -1,8 +1,6 @@
-export const roleEnum = {
-    Customer: 0,
-    Staff: 2,
-    Admin: 3
-}
+import { roleEnum } from "../../../constants/roles";
+
+export { roleEnum };
 
 export const routes = [
   {

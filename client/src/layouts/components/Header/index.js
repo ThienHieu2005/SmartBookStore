@@ -12,6 +12,7 @@ import Search from "../Search";
 import authApi from "../../../api/authApi";
 import { logout } from '../../../redux/actions/auth';
 import { destroy } from '../../../redux/actions/cart';
+import { roleEnum } from "../../../constants/roles";
 
 import styles from './Header.module.css';
 
@@ -53,21 +54,23 @@ function Header() {
                 <div className={styles.headerIcon}>
                   {
                     currentUser.email && currentUser.fullName ? 
-                    <div className={styles.account}>
+                    <div className={styles.account} tabIndex={0}>
                       <img className={styles.avatar} src={currentUser?.avatar?.url} alt="" />
                       <p>{currentUser.fullName}</p>
                       <div className={styles.accountPopup}>
-                          {currentUser.role === 0 && (
+                          {currentUser.role === roleEnum.Customer && (
                             <>
                               <div className={styles.item}><Link className={styles.popupLink} to="/tai-khoan">Tài khoản của tôi</Link></div>
                             </>
                           )}
-                          {currentUser.role > 0 && (
+                          {[roleEnum.Staff, roleEnum.Admin].includes(currentUser.role) && (
                             <>
                               <div className={styles.item}><Link className={styles.popupLink} to="/admin">Quản lý BookStore</Link></div>
                             </>
                           )}
-                          <div className={styles.item}><p className={styles.popupLink} onClick={handleLogout} to="">Đăng xuất</p></div>
+                          <div className={styles.item}>
+                            <button type="button" className={`${styles.popupLink} ${styles.logoutButton}`} onClick={handleLogout}>Đăng xuất</button>
+                          </div>
                       </div>
                     </div>
                     : <Link to="/dang-nhap"><BsPerson /><p>Tài khoản</p></Link>

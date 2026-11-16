@@ -19,7 +19,7 @@ router.patch('/reset-password', authController.handleResetPassword)
 
 router.post('/refresh-token', authController.handleRefreshToken)
 router.get('/me', verifyToken, authController.getCurrentUser)
-router.get('/logout', verifyToken, authController.handleLogout)
+router.get('/logout', authController.handleLogout)
 
 
 module.exports = router;

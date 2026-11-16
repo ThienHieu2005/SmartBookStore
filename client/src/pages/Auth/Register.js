@@ -86,9 +86,11 @@ export default function Register() {
       const { fullName, password, email } = formik.values
       try {
         setLoading(true)
-        await authApi.register({ fullName, password, email})
+        const result = await authApi.register({ fullName, password, email})
         setLoading(false)
-        alert("Tạo tài khoản thành công! Vui lòng kiểm tra email để kích hoạt tài khoản")
+        alert(result.emailSent
+          ? "Tạo tài khoản thành công! Vui lòng kiểm tra email để kích hoạt tài khoản"
+          : result.message)
         navigate({ pathname: "/dang-nhap" });
       } catch (error) {
         setLoading(false)
